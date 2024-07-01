@@ -1,4 +1,4 @@
-syntax = "proto3";
+﻿syntax = "proto3";
 
 package options;
 
@@ -6,12 +6,14 @@ import "google/protobuf/descriptor.proto";
 
 option go_package = "github.com/asynkron/protoactor-go/protobuf/protoc-gen-go-grain/options";
 
+// 服务器生成代码时 使用的参数
 message MethodOptions {
-  // mark a method as reenterable will generate a callback version of the method
-  bool reenterable = 1;
-  // generate an extra future interface in the client
-  // all methods called in reenterable methods should use the future interface
+  // 异步接口标记
+  bool reenterAble = 1;
+  // 当接口为异步时，是否生成future接口
   bool future = 2;
+  // 是否生成rpc接口
+  bool rpc = 3;
 }
 
 extend google.protobuf.MethodOptions {

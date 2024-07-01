@@ -1,34 +1,12 @@
 {{ $service := . }}
 var x{{ $service.Name }}Factory func() {{ $service.Name }}
 
-// {{ $service.Name }}Factory produces a {{ $service.Name }}
+// {{ $service.Name }}Factory {{ $service.Name }}接口实现类
 func {{ $service.Name }}Factory(factory func() {{ $service.Name }}) {
 	x{{ $service.Name }}Factory = factory
 }
 
-// Get{{ $service.Name }}GrainClient instantiates a new {{ $service.Name }}GrainClient with given Identity
-func Get{{ $service.Name }}GrainClient(c *cluster.Cluster, id string) *{{ $service.Name }}GrainClient {
-	if c == nil {
-		panic(fmt.Errorf("nil cluster instance"))
-	}
-	if id == "" {
-		panic(fmt.Errorf("empty id"))
-	}
-	return &{{ $service.Name }}GrainClient{Identity: id, cluster: c}
-}
-
-// Get{{ $service.Name }}Kind instantiates a new cluster.Kind for {{ $service.Name }}
-func Get{{ $service.Name }}Kind(opts ...actor.PropsOption) *cluster.Kind {
-	props := actor.PropsFromProducer(func() actor.Actor {
-		return &{{ $service.Name }}Actor{
-			Timeout: 60 * time.Second,
-		}
-	}, opts...)
-	kind := cluster.NewKind("{{ $service.Name }}", props)
-	return kind
-}
-
-// Get{{ $service.Name }}Kind instantiates a new cluster.Kind for {{ $service.Name }}
+// New{{ $service.Name }}Kind 实例化{{ $service.Name }} cluster-Kind
 func New{{ $service.Name }}Kind(factory func() {{ $service.Name }}, timeout time.Duration, opts ...actor.PropsOption) *cluster.Kind {
 	x{{ $service.Name }}Factory = factory
 	props := actor.PropsFromProducer(func() actor.Actor {
@@ -40,28 +18,41 @@ func New{{ $service.Name }}Kind(factory func() {{ $service.Name }}, timeout time
 	return kind
 }
 
-// {{ $service.Name }} interfaces the services available to the {{ $service.Name }}
+// {{ $service.Name }} 服务接口
 type {{ $service.Name }} interface {
 	Init(ctx cluster.GrainContext)
 	Terminate(ctx cluster.GrainContext)
 	ReceiveDefault(ctx cluster.GrainContext)
 	{{- range $method := .Methods }}
-	{{ if $method.Options.Reenterable -}}
-	{{ $method.Name }}(req *{{ $method.Input }}, respond func(*{{ $method.Output }}), onError func(error), ctx cluster.GrainContext) error
+	{{ if $method.Options.ReenterAble -}}
+	{{ $method.Name }}(ctx cluster.GrainContext, r *{{ $method.Input }}, respond func(*{{ $method.Output }}), onError func(error)) error
+	{{ else if $method.Options.Rpc -}}
+	{{ $method.Name }}(ctx cluster.GrainContext, r *{{ $method.Input }}) (*{{ $method.Output }}, error)   // rpc
 	{{- else -}}
-	{{ $method.Name }}(req *{{ $method.Input }}, ctx cluster.GrainContext) (*{{ $method.Output }}, error)
+	{{ $method.Name }}(ctx cluster.GrainContext, session session.ISession, cmd *{{ $method.Input }}) (*{{ $method.Output }}, error) // handler
 	{{- end }}
 	{{- end}}
 }
 
-// {{ $service.Name }}GrainClient holds the base data for the {{ $service.Name }}Grain
 type {{ $service.Name }}GrainClient struct {
 	Identity string
 	cluster  *cluster.Cluster
 }
+
+func New{{ $service.Name }}GrainClient(c *cluster.Cluster, id string) *{{ $service.Name }}GrainClient {
+	if c == nil {
+		panic(fmt.Errorf("nil cluster instance"))
+	}
+	if id == "" {
+		panic(fmt.Errorf("empty id"))
+	}
+
+	return &{{ $service.Name }}GrainClient{Identity: id, cluster: c}
+}
+
 {{ range $method := .Methods}}
 {{ if $method.Options.Future -}}
-// {{ $method.Name }}Future return a future for the execution of {{ $method.Name }} on the cluster
+// {{ $method.Name }}Future 异步调用时 使用Future
 func (g *{{ $service.Name }}GrainClient) {{ $method.Name }}Future(r *{{ $method.Input }}, opts ...cluster.GrainCallOption) (*actor.Future, error) {
 	bytes, err := proto.Marshal(r)
 	if err != nil {
@@ -77,8 +68,10 @@ func (g *{{ $service.Name }}GrainClient) {{ $method.Name }}Future(r *{{ $method.
 	return f, nil
 }
 {{ end }}
-// {{ $method.Name }} requests the execution on to the cluster with CallOptions
-func (g *{{ $service.Name }}GrainClient) {{ $method.Name }}(r *{{ $method.Input }}, opts ...cluster.GrainCallOption) (*{{ $method.Output }}, error) {
+
+{{ if $method.Options.Rpc -}}
+// {{ $method.Name }} 使用 CallOptions 对集群执行请求
+func (g *{{ $service.Name }}GrainClient) {{ $method.Name }}(identity string, r *{{ $method.Input }}, opts ...cluster.GrainCallOption) (*{{ $method.Output }}, error) {
 	if g.cluster.Config.RequestLog {
 		g.cluster.Logger().Info("Requesting", slog.String("identity", g.Identity), slog.String("kind", "{{ $service.Name }}"), slog.String("method", "{{ $method.Name }}"), slog.Any("request", r))
 	}
@@ -103,33 +96,58 @@ func (g *{{ $service.Name }}GrainClient) {{ $method.Name }}(r *{{ $method.Input 
 		return nil, fmt.Errorf("unknown response type %T", resp)
 	}
 }
+{{- else -}}
+// {{ $method.Name }} 使用 CallOptions 对集群执行请求
+func (g *{{ $service.Name }}GrainClient) {{ $method.Name }}(cmd *{{ $method.Input }}, opts ...cluster.GrainCallOption) (*{{ $method.Output }}, error) {
+	if g.cluster.Config.RequestLog {
+		g.cluster.Logger().Info("Requesting", slog.String("identity", g.Identity), slog.String("kind", "{{ $service.Name }}"), slog.String("method", "{{ $method.Name }}"), slog.Any("request", cmd))
+	}
+	bytes, err := proto.Marshal(cmd)
+	if err != nil {
+		return nil, err
+	}
+	reqMsg := &cluster.GrainRequest{MethodIndex: {{ $method.Index }}, MessageData: bytes}
+	resp, err := g.cluster.Request(g.Identity, "{{ $service.Name }}", reqMsg, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("error request: %w", err)
+	}
+	switch msg := resp.(type) {
+	case *{{ $method.Output }}:
+		return msg, nil
+	case *cluster.GrainErrorResponse:
+		if msg == nil {
+			return nil, nil
+		}
+		return nil, msg
+	default:
+		return nil, fmt.Errorf("unknown response type %T", resp)
+	}
+}
 {{ end }}
-// {{ $service.Name }}Actor represents the actor structure
+{{ end }}
+
 type {{ $service.Name }}Actor struct {
 	ctx     cluster.GrainContext
 	inner   {{ $service.Name }}
 	Timeout time.Duration
 }
 
-// Receive ensures the lifecycle of the actor for the received message
 func (a *{{ $service.Name }}Actor) Receive(ctx actor.Context) {
 	switch msg := ctx.Message().(type) {
-	case *actor.Started: //pass
+	case *actor.Started:
 	case *cluster.ClusterInit:
 		a.ctx = cluster.NewGrainContext(ctx, msg.Identity, msg.Cluster)
 		a.inner = x{{ $service.Name }}Factory()
 		a.inner.Init(a.ctx)
-
 		if a.Timeout > 0 {
-			ctx.SetReceiveTimeout(a.Timeout)
+		    ctx.SetReceiveTimeout(a.Timeout)
 		}
 	case *actor.ReceiveTimeout:
 		ctx.Poison(ctx.Self())
 	case *actor.Stopped:
 		a.inner.Terminate(a.ctx)
-	case actor.AutoReceiveMessage: // pass
-	case actor.SystemMessage: // pass
-
+	case actor.AutoReceiveMessage:
+	case actor.SystemMessage:
 	case *cluster.GrainRequest:
 		switch msg.MethodIndex {
 		{{ range $method := .Methods -}}
@@ -142,20 +160,36 @@ func (a *{{ $service.Name }}Actor) Receive(ctx actor.Context) {
 					WithMetadata(map[string]string{
 						"argument": req.String(),
 				})
+
 				ctx.Respond(resp)
 				return
 			}
-			{{ if $method.Options.Reenterable -}}
-			err = a.inner.{{ $method.Name }}(req, respond[*{{ $method.Output }}](a.ctx), a.onError, a.ctx)
-			{{ else }}
-			r0, err := a.inner.{{ $method.Name }}(req, a.ctx)
-			{{ end -}}
+
+			{{ if $method.Options.ReenterAble -}}
+			err = a.inner.{{ $method.Name }}(a.ctx, req, respond[*{{ $method.Output }}](a.ctx), a.onError)
+			{{ else if $method.Options.Rpc -}}
+			r0, err := a.inner.{{ $method.Name }}(a.ctx, req)
+			{{- else -}}
+			// cmd 方法加上处理 session
+			s := (a.ctx.MessageHeader().Get("session")).(session.ISession)
+			if s == nil {
+				ctx.Logger().Error("[Grain] {{ $method.Name }}({{ $method.Input }}) Session not found.", slog.Any("error", err))
+				resp := cluster.NewGrainErrorResponse(cluster.ErrorReason_UNKNOWN, err.Error()).
+					WithMetadata(map[string]string{
+						"argument": req.String(),
+					})
+				ctx.Respond(resp)
+				return
+			}
+			r0, err := a.inner.{{ $method.Name }}(a.ctx, s, req)
+			{{ end }}
 			if err != nil {
 				resp := cluster.FromError(err)
 				ctx.Respond(resp)
 				return
 			}
-			{{ if not $method.Options.Reenterable -}}
+
+			{{ if not $method.Options.ReenterAble -}}
 			ctx.Respond(r0)
 			{{ end -}}
 		{{ end -}}
@@ -165,8 +199,7 @@ func (a *{{ $service.Name }}Actor) Receive(ctx actor.Context) {
 	}
 }
 
-// onError should be used in ctx.ReenterAfter
-// you can just return error in reenterable method for other errors
+// onError 应该在 CTX 中使用。Reenter之后，您可以只在 ReenterAble 方法中返回错误以处理其他错误
 func (a *{{ $service.Name }}Actor) onError(err error) {
 	resp := cluster.FromError(err)
 	a.ctx.Respond(resp)
