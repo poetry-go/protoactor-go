@@ -21,7 +21,7 @@ const (
 	protoPackage   = protogen.GoImportPath("google.golang.org/protobuf/proto")
 	actorPackage   = protogen.GoImportPath("github.com/asynkron/protoactor-go/actor")
 	clusterPackage = protogen.GoImportPath("github.com/asynkron/protoactor-go/cluster")
-	sessionPackage = protogen.GoImportPath("micro/poetry-go/session")
+	sessionPackage = protogen.GoImportPath("github.com/solemncn/poetry-go/session")
 )
 
 var (
