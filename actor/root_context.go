@@ -19,9 +19,9 @@ var (
 	_ stopperPart    = &RootContext{}
 )
 
-func NewRootContext(actorSystem *ActorSystem, header map[string]string, middleware ...SenderMiddleware) *RootContext {
+func NewRootContext(actorSystem *ActorSystem, header map[string]interface{}, middleware ...SenderMiddleware) *RootContext {
 	if header == nil {
-		header = make(map[string]string)
+		header = make(map[string]interface{})
 	}
 
 	return &RootContext{
@@ -45,7 +45,7 @@ func (rc *RootContext) Logger() *slog.Logger {
 	return rc.actorSystem.Logger()
 }
 
-func (rc *RootContext) WithHeaders(headers map[string]string) *RootContext {
+func (rc *RootContext) WithHeaders(headers map[string]interface{}) *RootContext {
 	rc.headers = headers
 
 	return rc
@@ -119,7 +119,7 @@ func (rc *RootContext) Request(pid *PID, message interface{}) {
 
 func (rc *RootContext) RequestWithCustomSender(pid *PID, message interface{}, sender *PID) {
 	env := &MessageEnvelope{
-		Header:  nil,
+		Header:  rc.headers,
 		Message: message,
 		Sender:  sender,
 	}
@@ -130,7 +130,7 @@ func (rc *RootContext) RequestWithCustomSender(pid *PID, message interface{}, se
 func (rc *RootContext) RequestFuture(pid *PID, message interface{}, timeout time.Duration) *Future {
 	future := NewFuture(rc.actorSystem, timeout)
 	env := &MessageEnvelope{
-		Header:  nil,
+		Header:  rc.headers,
 		Message: message,
 		Sender:  future.PID(),
 	}

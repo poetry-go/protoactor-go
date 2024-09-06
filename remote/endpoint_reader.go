@@ -162,7 +162,7 @@ func (s *endpointReader) onMessageBatch(m *MessageBatch) error {
 			ref, _ := s.remote.actorSystem.ProcessRegistry.GetLocal(target.Id)
 			ref.SendSystemMessage(target, msg)
 		default:
-			var header map[string]string
+			var header map[string]interface{}
 
 			// fast path
 			if sender == nil && envelope.MessageHeader == nil {
@@ -172,7 +172,7 @@ func (s *endpointReader) onMessageBatch(m *MessageBatch) error {
 
 			// slow path
 			if envelope.MessageHeader != nil {
-				header = envelope.MessageHeader.HeaderData
+				header = actor.ConvertToMessageHeader(envelope.MessageHeader.HeaderData)
 			}
 			localEnvelope := &actor.MessageEnvelope{
 				Header:  header,

@@ -1,12 +1,17 @@
 package actor
 
-type messageHeader map[string]string
+type messageHeader map[string]interface{}
 
 func (header messageHeader) Get(key string) string {
-	return header[key]
+	str, ok := header[key].(string)
+	if !ok {
+		return ""
+	}
+
+	return str
 }
 
-func (header messageHeader) Set(key string, value string) {
+func (header messageHeader) Set(key string, value interface{}) {
 	header[key] = value
 }
 
@@ -25,8 +30,14 @@ func (header messageHeader) Length() int {
 func (header messageHeader) ToMap() map[string]string {
 	mp := make(map[string]string)
 	for k, v := range header {
-		mp[k] = v
+		str, ok := v.(string)
+		if !ok {
+			continue
+		}
+
+		mp[k] = str
 	}
+
 	return mp
 }
 
@@ -43,16 +54,16 @@ type MessageEnvelope struct {
 	Sender  *PID
 }
 
-func (envelope *MessageEnvelope) GetHeader(key string) string {
+func (envelope *MessageEnvelope) GetHeader(key string) interface{} {
 	if envelope.Header == nil {
 		return ""
 	}
 	return envelope.Header.Get(key)
 }
 
-func (envelope *MessageEnvelope) SetHeader(key string, value string) {
+func (envelope *MessageEnvelope) SetHeader(key string, value interface{}) {
 	if envelope.Header == nil {
-		envelope.Header = make(map[string]string)
+		envelope.Header = make(map[string]interface{})
 	}
 	envelope.Header.Set(key, value)
 }
@@ -92,4 +103,14 @@ func UnwrapEnvelopeSender(message interface{}) *PID {
 		return env.Sender
 	}
 	return nil
+}
+
+// ConvertToMessageHeader converts a map[string]string to a messageHeader
+func ConvertToMessageHeader(header map[string]string) map[string]interface{} {
+	headers := make(messageHeader, len(header))
+	for k, v := range header {
+		headers[k] = v
+	}
+
+	return headers
 }
