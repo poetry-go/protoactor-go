@@ -2,13 +2,8 @@ package actor
 
 type messageHeader map[string]interface{}
 
-func (header messageHeader) Get(key string) string {
-	str, ok := header[key].(string)
-	if !ok {
-		return ""
-	}
-
-	return str
+func (header messageHeader) Get(key string) interface{} {
+	return header[key]
 }
 
 func (header messageHeader) Set(key string, value interface{}) {
@@ -42,7 +37,7 @@ func (header messageHeader) ToMap() map[string]string {
 }
 
 type ReadonlyMessageHeader interface {
-	Get(key string) string
+	Get(key string) interface{}
 	Keys() []string
 	Length() int
 	ToMap() map[string]string
