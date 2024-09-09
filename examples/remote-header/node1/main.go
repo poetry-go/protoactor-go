@@ -26,7 +26,7 @@ func main() {
 			switch context.Message().(type) {
 			case *messages.Pong:
 				v := context.MessageHeader().Get("test_header")
-				log.Println("Receive pong message with header:" + v)
+				log.Printf("Got pong with header: %v", v)
 			}
 		})
 
